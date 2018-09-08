@@ -1,0 +1,88 @@
+#!/bin/bash
+export AWS_DEFAULT_REGION=us-west-2
+export QUEUE=https://sqs.us-west-2.amazonaws.com/088617881078/backlog_crawlBot
+export WIP_Q=https://sqs.us-west-2.amazonaws.com/088617881078/wip_crawlBot
+export NEEDS_ATTENTION_QUEUE=https://sqs.us-west-2.amazonaws.com/088617881078/needs_attention_queue
+export ART_NAME=SmashEndurance.jar
+export ART_BKT=endurance-crawl-artifacts
+export OUT_BKT=endurance-crawl-output
+
+sudo usermod -a -G docker ubuntu
+sudo service docker restart
+
+pip install boto3
+
+# start wappalyzer cli
+docker run --rm wappalyzer/cli https://www.wappalyzer.com
+# create wrapper script
+rm -f /home/ubuntu/wrapper.py
+cat << WPR >> wrapper.py
+import boto3
+import os
+import pdb
+
+s3_obj = boto3.resource('s3')
+s3_client = boto3.client('s3')
+sqs = boto3.client('sqs', region_name='us-west-2')
+jar_art = os.getenv('ART_NAME')
+res = s3_obj.Object(os.getenv('ART_BKT'), os.getenv('ART_NAME')).download_file(os.getenv('ART_NAME'))
+
+# count the backlog messages
+def msg_count():
+	n = sqs.get_queue_attributes(QueueUrl=os.getenv('QUEUE'),AttributeNames=['ApproximateNumberOfMessages'])['Attributes']['ApproximateNumberOfMessages']
+	print("{} msgs in queue".format(n))
+	return int(n)
+
+# get a message
+# run the jar on the message
+# put the results in the results bucket
+# delete the message from the backlog because we just finished it
+def work():
+	sid = ''
+	surl = ''
+	print("working")
+	try:
+		msg = sqs.receive_message(QueueUrl=os.getenv('QUEUE'), WaitTimeSeconds=20, MaxNumberOfMessages=1, VisibilityTimeout=120)['Messages'][0]
+	except Exception as e:
+		print("Exception getting message: {}".format(e))
+		return
+
+	if ',' in msg['Body']:
+		try:
+			sid, surl = msg['Body'].split(',')
+			surl = surl.replace(' ', '')
+		except ValueError as e:
+			sqs.send_message(QueueUrl=os.getenv('NEEDS_ATTENTION_QUEUE'), MessageBody="Bad Message!: {}->{}".format(e, msg['Body']))
+			print("Malformed message: {}->{}".format(msg['Body'], e))
+	else:
+		print("Bad Message! {}".format(msg['Body']))
+		sqs.send_message(QueueUrl=os.getenv('NEEDS_ATTENTION_QUEUE'), MessageBody="Bad Message!: {}".format(msg['Body']))
+		return
+
+	res_name = "{}.json".format(sid)
+	invoke_jar_command = "java -jar SmashEndurance.jar {} {}".format(sid, surl)
+	print("invoked jar with {}".format(invoke_jar_command))
+	ex_code = os.system(invoke_jar_command)
+	if ex_code == 0:
+		s3_obj.Object(os.getenv('OUT_BKT'), res_name).upload_file(res_name)
+		sqs.delete_message(QueueUrl=os.getenv('QUEUE'), ReceiptHandle=msg['ReceiptHandle'])
+		os.remove(res_name)
+		# with File.open(res_name) as f:
+			# s3_client.put_object(Bucket=os.getenv('OUT_BKT'), Body=f.read())
+	else:
+		sqs.send_message(QueueUrl=os.getenv('NEEDS_ATTENTION_QUEUE'), MessageBody="Bad Message!: {}".format(msg['Body']))
+		print("jar error->{}->{}->{}".format(ex_code, sid, surl))
+
+# always stay busy and break if there is no work left
+while True:
+	if msg_count() > 0:
+		work()
+	else:
+		break
+
+WPR
+# make wrapper runnable
+chmod +x wrapper.py
+# run the wrapper
+python wrapper.py >> log
+
