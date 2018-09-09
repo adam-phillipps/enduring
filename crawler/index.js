@@ -75,9 +75,11 @@ function scrape(resultBkt, assignment) {
 			return links;
 		})
 		.then((lnkAddrs) => {
+			let link;
 			return lnkAddrs.forEach((lnkAddr, i) => {
+				link = parameterizeURL(lnkAddr);
 				if (typeof lnkAddr !== "undefined") {
-					reqPromise(parameterizeURL(lnkAddr))
+					reqPromise(link)
 						.then((lnkPage) => {
 							let textBody = lnkPage.text().trim()
 								.replace(/&nbsp;/g, '')
@@ -85,7 +87,7 @@ function scrape(resultBkt, assignment) {
 								.replace(/\n/g, "");
 							bags.push(textBody);
 
-							return bags;
+							// return bags;
 						})
 						.catch((err) => { console.log("2Error: " + err) });
 				}
