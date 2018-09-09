@@ -9,8 +9,10 @@
   "author": "Adam K Phillipps",
   "license": "ISC",
   "dependencies": {
+    "aws-sdk": "^2.311.0",
     "cheerio": "^1.0.0-rc.2",
     "request": "^2.88.0",
-    "request-promise": "^4.2.2"
+    "request-promise": "^4.2.2",
+    "uuid": "^3.3.2"
   }
 }

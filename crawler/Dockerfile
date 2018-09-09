@@ -9,9 +9,8 @@ RUN 			mkdir -p /home/node/app/ \
 					/home/node/logs \
 				&& touch /home/node/logs/bot.log \
 					/home/node/results/bot.results
-VOLUME ./:/home/node/app/
-COPY ./ 		/home/node/app/
-WORKDIR 		/home/node/app/
 
-# ENTRYPOINT 	["node", "index.js"]
-ENTRYPOINT ["/bin/bash"]
+COPY ./ 		/home/node/app/
+
+WORKDIR 		/home/node/app/
+ENTRYPOINT 	["node", "index.js"]
