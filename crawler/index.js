@@ -75,19 +75,12 @@ function scrape(resultBkt, assignment) {
 			return links;
 		})
 		.then((lnkAddrs) => {
-			let link;
 			return lnkAddrs.forEach((lnkAddr, i) => {
-				link = parameterizeURL(lnkAddr);
 				if (typeof lnkAddr !== "undefined") {
-					reqPromise(link)
+					reqPromise(parameterizeURL(lnkAddr))
 						.then((lnkPage) => {
-							let textBody = lnkPage.text().trim()
-								.replace(/&nbsp;/g, '')
-								.replace(/<[^\/>][^>]*><\/[^>]+>/g, "")
-								.replace(/\n/g, "");
-							bags.push(textBody);
-
-							// return bags;
+							// insert your brilliant stuff
+							// insert your brilliant stuff
 						})
 						.catch((err) => { console.log("2Error: " + err) });
 				}
@@ -103,6 +96,12 @@ function scrape(resultBkt, assignment) {
 			sendBagToBucket(resultBkt, resId, JSON.stringify(bagWrapper));
 		})
 		.catch((err) => { console.log("3Error: " + err) })
+}
+
+function parseBody(body) {
+
+	// get out city and state
+
 }
 
 for (let i = 0; i <= 90; i++) {
