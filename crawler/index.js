@@ -3,8 +3,9 @@ const uuid = require('uuid');
 const reqPromise = require('request-promise');
 const cheerio = require('cheerio');
 const fs = require('fs');
+const sleep = require('system-sleep');
 
-let credentials = new AWS.SharedIniFileCredentials({profile: 'endurance'});
+let credentials = new AWS.SharedIniFileCredentials();
 AWS.config.credentials = credentials;
 AWS.config.update({region: 'us-west-2'});
 
@@ -20,7 +21,7 @@ function parameterizeURL(url) {
 			return cheerio.load(body, { normalizeWhitespace: true })}};
 }
 
-function sleep (time) {
+function sleepCustom (time) {
   return new Promise((resolve) => setTimeout(resolve, time));
 }
 
@@ -29,13 +30,21 @@ function processQueueMessage(queue, resultsBkt) {
 		QueueUrl: queue,
 	  	MaxNumberOfMessages: 1,
 		VisibilityTimeout: 120
-	};
+	};	
+
 	sqs.receiveMessage(params, function(err, data) {
 		if (err) { console.log('1', err, err.stack) }
 		// else { sendBagToBucket(resultsBkt, data.Messages[0]) }
 		else {			
 			if(data.Messages && data.Messages.length > 0){
-				scrape(resultsBkt, data.Messages[0].Body)
+				scrape(resultsBkt, data.Messages[0].Body);
+
+				var deleteParams = {
+					QueueUrl: queue,
+					ReceiptHandle: data.Messages[0].ReceiptHandle
+				  };
+
+				sqs.deleteMessage(deleteParams);
 			}			
 		}
 	});
@@ -51,8 +60,8 @@ function sendBagToBucket(resultsBkt, resId, bag) {
 		if (err) { console.log('2', err, err.stack) }
 		else {
 			// sqs.deleteMessage(msgHandle);
-			console.log(data);
-			// sleep(10);
+			// console.log(data);
+			sleep(1000);
 		}
 	});
 }
@@ -211,8 +220,40 @@ function regexParser(str, pattern, config) {
 
 // console.log(urlRegex('contact.php',{}));
 
-for (let i = 0; i <= 100; i++) {
-	processQueueMessage(
-		'https://sqs.us-west-2.amazonaws.com/088617881078/backlog_crawlBot',
-		'endurance-crawl-bags');
-}
+do {
+	for (let i = 0; i <= 10000; i++) {
+		processQueueMessage(
+			'https://sqs.us-west-2.amazonaws.com/088617881078/backlog_crawlBot',
+			'endurance-crawl-bags');
+	}	
+	sleep(5000);
+ } while (true);
+
+// var lineReader = require('readline').createInterface({
+// 	input: fs.createReadStream('/Users/jchaves/Downloads/urlListWithAdWords/Urls.txt')
+// });
+
+// let countLine = 0;
+
+
+// lineReader.on('line', function (line) {		
+
+// 	var params = {
+// 		DelaySeconds: 0,
+// 		MessageAttributes: {},
+// 		MessageBody: countLine + ','+ line,
+// 		QueueUrl: "https://sqs.us-west-2.amazonaws.com/088617881078/backlog_crawlBot"
+// 	   };
+
+// 	   if(countLine >= 1 && countLine<= 10000){
+// 		sqs.sendMessage(params, function(err, data) {
+// 			if (err) {
+// 			  console.log("Error", err);
+// 			} else {
+// 			  console.log("Success", data.MessageId);
+// 			}
+// 		  });
+// 		console.log('Line from file:', line);
+// 	   }	
+// 	countLine+=1;
+//   });
