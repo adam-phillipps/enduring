@@ -84,9 +84,10 @@ function scrape(resultBkt, assignment) {
 					promises.push(reqPromise(parameterizeURL(lnkAddr))
 						.then((lnkPage) => {
 							let textBody = lnkPage.text().trim();							
-							let {city, state } = getCityState(textBody);							
-							bags.push(textBody);							
-							return {city,state,data:textBody};
+							let {city, state } = getCityState(textBody);
+							result = {city,state,data:textBody};						
+							bags.push(result);							
+							return result;
 						})
 						.catch((err) => { console.log("2Error: " + err) }));
 				}				
@@ -97,7 +98,7 @@ function scrape(resultBkt, assignment) {
 			let bagWrapper = {
 				id: resId,
 				url: url,
-				data: bag
+				data: bags
 			}					
 			sendBagToBucket(resultBkt, resId, JSON.stringify(bagWrapper));
 		})
@@ -192,8 +193,8 @@ function regexParser(str, pattern, config) {
 
 // console.log(cityRegex('asdasd asdasd ags Egg Harbor City, Alabama'));
 
-// scrape('endurance-crawl-bags','96,http://acecwatertown.org/');
-// scrape('endurance-crawl-bags','97,https://www.danitadelimont.com/');
+scrape('endurance-crawl-bags','96,http://acecwatertown.org/');
+scrape('endurance-crawl-bags','97,https://www.danitadelimont.com/');
 // scrape('','98,http://dougind.com');
 
 // for (let i = 0; i <= 90; i++) {
