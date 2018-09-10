@@ -45,8 +45,7 @@ function sendBagToBucket(resultsBkt, resId, bag) {
 		Body: bag,
 		Bucket: resultsBkt,
 		Key: resId
-	};
-	// console.log(JSON.stringify(params));
+	};	
 	s3.putObject(params, function(err, data) {
 		if (err) { console.log('2', err, err.stack) }
 		else {
@@ -67,7 +66,7 @@ function scrape(resultBkt, assignment) {
 
 	reqPromise(opts)
 		.then(($) => {
-			//traverse the a elements first then check for lowercase, text could uppercase
+			//traverse the a elements first then check for lowercase, text could be lowercase
 			$( 'a' ).each(function( index ) {						
 				selectors.forEach((selector, i) => {					
 					if($( this ).html().toLowerCase().indexOf(selector) > -1){
@@ -79,29 +78,29 @@ function scrape(resultBkt, assignment) {
 			return links;
 		})
 		.then((lnkAddrs) => {
-			return lnkAddrs.forEach((lnkAddr, i) => {
-				if (typeof lnkAddr !== "undefined") {
-					reqPromise(parameterizeURL(lnkAddr))
+			let promises = [];
+			lnkAddrs.forEach((lnkAddr, i) => {
+				if (typeof lnkAddr !== "undefined") {					
+					promises.push(reqPromise(parameterizeURL(lnkAddr))
 						.then((lnkPage) => {
 							let textBody = lnkPage.text().trim();							
 							let {city, state } = getCityState(textBody);
-							console.log('link: ' + lnkAddr + ' city: ' + city + ' state: ' + state);
-							bags.push(textBody);
+							result = {city,state,data:textBody};						
+							bags.push(result);							
+							return result;
 						})
-						.catch((err) => { console.log("2Error: " + err) });
-				}else{
-					return {};
-				}
+						.catch((err) => { console.log("2Error: " + err) }));
+				}				
 			});
+			return Promise.all(promises);
 		})
-		.then((bag) => {
+		.then((bag) => {			
 			let bagWrapper = {
 				id: resId,
 				url: url,
-				data: bag
-			}
-			console.log(JSON.stringify(bagWrapper));
-			// sendBagToBucket(resultBkt, resId, JSON.stringify(bagWrapper));
+				data: bags
+			}					
+			sendBagToBucket(resultBkt, resId, JSON.stringify(bagWrapper));
 		})
 		.catch((err) => { console.log("3Error: " + err) })
 }
@@ -142,7 +141,7 @@ function stateAbbrRegex(str,config) {
 function cityRegex(str,config) {
 	return regexParser(
 		str,
-		'\\b[a-zA-Z]+(?:[\\s-][a-zA-Z]+)+,[ ]+(?:Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New[ ]Hampshire|New[ ]Jersey|New[ ]Mexico|New[ ]York|North[ ]Carolina|North[ ]Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode[ ]Island|South[ ]Carolina|South[ ]Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West[ ]Virginia|Wisconsin|Wyoming)',
+		'\\b[a-zA-Z]+([ ][a-zA-Z]{0,3})+,[ ]+(?:Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New[ ]Hampshire|New[ ]Jersey|New[ ]Mexico|New[ ]York|North[ ]Carolina|North[ ]Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode[ ]Island|South[ ]Carolina|South[ ]Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West[ ]Virginia|Wisconsin|Wyoming)',
 		config);
 }
 
@@ -192,10 +191,10 @@ function regexParser(str, pattern, config) {
 
 // console.log(getCityState('Contact Us Founded in 1954 by Howard and Naomi Taylor, Douglass has been supplying high design, quality fabrics to the industry for over sixty years. Located in Egg Harbor City, New Jersey, decades of devotion to textile manufacturing have earned Douglass a reputation for discriminating style, quick delivery, and excellent customer service. Our extensive sales force, both domestically and abroad, ensure there is someone available to address your special fabric needs. Douglass provides contract seating fabrics, panel fabrics, faux vinyls / urethanes, and foam to a broad spectrum of markets including contract purchasers, interior designers, furniture manufacturers, architects, and specifiers along with federal and state governments. Please browse our website for additional information on our products, or to request memo samples. CONTACT US: Douglass Industries, Inc. 412 Boston Ave P.O. Box 701 Egg Harbor City, NJ  08215 Phone:  609-965-6030 E-Mail:  info@dougind.com Customer Service Phone:  800-950-3684 Fax:  609-965-7271 E-Mail: sales@dougind.com samples@dougind.com Monday – Friday 8:00am to 6pm E.S.T.'));
 
-console.log(cityRegex('Egg Harbor City, Alabama'));
+// console.log(cityRegex('asdasd asdasd ags Egg Harbor City, Alabama'));
 
-// scrape('','96,http://acecwatertown.org/');
-// scrape('','97,https://www.danitadelimont.com/');
+scrape('endurance-crawl-bags','96,http://acecwatertown.org/');
+scrape('endurance-crawl-bags','97,https://www.danitadelimont.com/');
 // scrape('','98,http://dougind.com');
 
 // for (let i = 0; i <= 90; i++) {
