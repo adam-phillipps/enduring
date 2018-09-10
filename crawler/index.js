@@ -3,7 +3,8 @@ const uuid = require('uuid');
 const reqPromise = require('request-promise');
 const cheerio = require('cheerio');
 const fs = require('fs');
-let credentials = new AWS.SharedIniFileCredentials({profile: 'smash'});
+
+let credentials = new AWS.SharedIniFileCredentials({profile: 'endurance'});
 AWS.config.credentials = credentials;
 AWS.config.update({region: 'us-west-2'});
 
@@ -15,7 +16,7 @@ function parameterizeURL(url) {
 	return {
 		// followAllRedirects: true,
 		uri: url,
-		transform: (body) => {
+		transform: (body) => {			
 			return cheerio.load(body, { normalizeWhitespace: true })}};
 }
 
@@ -66,12 +67,15 @@ function scrape(resultBkt, assignment) {
 
 	reqPromise(opts)
 		.then(($) => {
-			let v;
-			selectors.forEach((selector, i) => {
-				v = $('a:contains("' + selector + '")');
-				links.push(v.attr('href'));
-			});
-
+			//traverse the a elements first then check for lowercase, text could uppercase
+			$( 'a' ).each(function( index ) {						
+				selectors.forEach((selector, i) => {					
+					if($( this ).html().toLowerCase().indexOf(selector) > -1){
+						links.push($( this ).attr('href'));
+					}									
+					
+				});
+			});					
 			return links;
 		})
 		.then((lnkAddrs) => {
@@ -79,10 +83,14 @@ function scrape(resultBkt, assignment) {
 				if (typeof lnkAddr !== "undefined") {
 					reqPromise(parameterizeURL(lnkAddr))
 						.then((lnkPage) => {
-							// insert your brilliant stuff
-							// insert your brilliant stuff
+							let textBody = lnkPage.text().trim();							
+							let {city, state } = getCityState(textBody);
+							console.log('link: ' + lnkAddr + ' city: ' + city + ' state: ' + state);
+							bags.push(textBody);
 						})
 						.catch((err) => { console.log("2Error: " + err) });
+				}else{
+					return {};
 				}
 			});
 		})
@@ -92,20 +100,106 @@ function scrape(resultBkt, assignment) {
 				url: url,
 				data: bag
 			}
-			// console.log(JSON.stringify(bagWrapper));
-			sendBagToBucket(resultBkt, resId, JSON.stringify(bagWrapper));
+			console.log(JSON.stringify(bagWrapper));
+			// sendBagToBucket(resultBkt, resId, JSON.stringify(bagWrapper));
 		})
 		.catch((err) => { console.log("3Error: " + err) })
 }
 
-function parseBody(body) {
+function getCityState(body) {
+	try{
+		let cityResult = cityRegex(body).concat(cityAbbrRegex(body));
+		let city = toStringAndFilterDups(cityResult.map(c => c.split(',')[0]));
+		let state = toStringAndFilterDups(stateRegex(body)
+			.concat(stateAbbrRegex(body))
+			.map(s => s.replace(', ','')));
 
-	// get out city and state
-
+		return {city,state};
+	}catch(err){
+		return {city:'',state:''};
+	}	
 }
 
-for (let i = 0; i <= 90; i++) {
-	processQueueMessage(
-		'https://sqs.us-west-2.amazonaws.com/088617881078/backlog_crawlBot',
-		'endurance-crawl-bags');
+function toStringAndFilterDups(arr) {
+	let unique_array = Array.from(new Set(arr));
+    return unique_array.toString();
 }
+
+function stateRegex(str, config) {
+	return regexParser(
+		str,
+		'Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New[ ]Hampshire|New[ ]Jersey|New[ ]Mexico|New[ ]York|North[ ]Carolina|North[ ]Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode[ ]Island|South[ ]Carolina|South[ ]Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West[ ]Virginia|Wisconsin|Wyoming',
+		config);
+}
+
+function stateAbbrRegex(str,config) {
+	return regexParser(
+		str,
+		'\\b,[ ]?[A-Z]{2}\\b',
+		config);
+}
+
+function cityRegex(str,config) {
+	return regexParser(
+		str,
+		'\\b[a-zA-Z]+(?:[\\s-][a-zA-Z]+)+,[ ]+(?:Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New[ ]Hampshire|New[ ]Jersey|New[ ]Mexico|New[ ]York|North[ ]Carolina|North[ ]Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode[ ]Island|South[ ]Carolina|South[ ]Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West[ ]Virginia|Wisconsin|Wyoming)',
+		config);
+}
+
+function cityAbbrRegex(str,config) {
+	return regexParser(
+		str,
+		'\\b[a-zA-Z]+(?:[\\s-][a-zA-Z]+)+,[ ]+([A-Z]{2})\\b',
+		config);
+}
+
+function streetRegex(str,config) {
+	return regexParser(
+		str,
+		'\\d+[ ](?:[A-Za-z0-9.-]+[ ]?)+(?:Avenue|Lane|Road|Boulevard|Drive|Street|Ave|Dr|Rd|Blvd|Ln|St)\\.?',
+		config);
+}
+
+function zipCodeRegex(str,config) {
+	return regexParser(
+		str,
+		'\\b\\d{5}(?:-\\d{4})?\\b',
+		config);
+}
+
+function regexParser(str, pattern, config) {
+
+	if (!str && typeof str !== 'string')
+		throw new TypeError('The first argument is not a string. Please provide a string value.');
+
+	if (!pattern && typeof pattern !== 'string')
+		throw new TypeError('The second argument is not a string. Please provide a string value.');
+
+	let flags = ['g'];
+
+	if (config && config.constructor == Object) {
+		let { matchAll, ignoreCase, multiLine, matchUnicode, stickyMatch } = config;
+		
+		if (matchAll === false)    flags.splice(0, 1);
+		if (ignoreCase === true)   flags.push('i');
+		if (multiLine === true)    flags.push('m');
+		if (matchUnicode === true) flags.push('u');
+		if (stickyMatch === true)  flags.push('y');
+	}
+	let result = str.match( new RegExp(pattern, flags.join('') || '') );
+	return (result) ? result : [];
+}
+
+// console.log(getCityState('Contact Us Founded in 1954 by Howard and Naomi Taylor, Douglass has been supplying high design, quality fabrics to the industry for over sixty years. Located in Egg Harbor City, New Jersey, decades of devotion to textile manufacturing have earned Douglass a reputation for discriminating style, quick delivery, and excellent customer service. Our extensive sales force, both domestically and abroad, ensure there is someone available to address your special fabric needs. Douglass provides contract seating fabrics, panel fabrics, faux vinyls / urethanes, and foam to a broad spectrum of markets including contract purchasers, interior designers, furniture manufacturers, architects, and specifiers along with federal and state governments. Please browse our website for additional information on our products, or to request memo samples. CONTACT US: Douglass Industries, Inc. 412 Boston Ave P.O. Box 701 Egg Harbor City, NJ  08215 Phone:  609-965-6030 E-Mail:  info@dougind.com Customer Service Phone:  800-950-3684 Fax:  609-965-7271 E-Mail: sales@dougind.com samples@dougind.com Monday – Friday 8:00am to 6pm E.S.T.'));
+
+console.log(cityRegex('Egg Harbor City, Alabama'));
+
+// scrape('','96,http://acecwatertown.org/');
+// scrape('','97,https://www.danitadelimont.com/');
+// scrape('','98,http://dougind.com');
+
+// for (let i = 0; i <= 90; i++) {
+// 	processQueueMessage(
+// 		'https://sqs.us-west-2.amazonaws.com/088617881078/backlog_crawlBot',
+// 		'endurance-crawl-bags');
+// }
