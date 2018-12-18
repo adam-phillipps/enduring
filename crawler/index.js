@@ -3,8 +3,9 @@ const uuid = require('uuid');
 const reqPromise = require('request-promise');
 const cheerio = require('cheerio');
 const fs = require('fs');
+const sleep = require('system-sleep');
 
-let credentials = new AWS.SharedIniFileCredentials({profile: 'endurance'});
+let credentials = new AWS.SharedIniFileCredentials();
 AWS.config.credentials = credentials;
 AWS.config.update({region: 'us-west-2'});
 
@@ -20,7 +21,7 @@ function parameterizeURL(url) {
 			return cheerio.load(body, { normalizeWhitespace: true })}};
 }
 
-function sleep (time) {
+function sleepCustom (time) {
   return new Promise((resolve) => setTimeout(resolve, time));
 }
 
@@ -29,13 +30,22 @@ function processQueueMessage(queue, resultsBkt) {
 		QueueUrl: queue,
 	  	MaxNumberOfMessages: 1,
 		VisibilityTimeout: 120
-	};
+	};	
+
 	sqs.receiveMessage(params, function(err, data) {
 		if (err) { console.log('1', err, err.stack) }
 		// else { sendBagToBucket(resultsBkt, data.Messages[0]) }
-		else {
-			// console.log(JSON.stringify(data))
-			scrape(resultsBkt, data.Messages[0].Body)
+		else {			
+			if(data.Messages && data.Messages.length > 0){
+				scrape(resultsBkt, data.Messages[0].Body);
+
+				var deleteParams = {
+					QueueUrl: queue,
+					ReceiptHandle: data.Messages[0].ReceiptHandle
+				  };
+
+				sqs.deleteMessage(deleteParams);
+			}			
 		}
 	});
 }
@@ -50,8 +60,8 @@ function sendBagToBucket(resultsBkt, resId, bag) {
 		if (err) { console.log('2', err, err.stack) }
 		else {
 			// sqs.deleteMessage(msgHandle);
-			console.log(data);
-			// sleep(10);
+			// console.log(data);
+			sleep(1000);
 		}
 	});
 }
@@ -80,12 +90,14 @@ function scrape(resultBkt, assignment) {
 		.then((lnkAddrs) => {
 			let promises = [];
 			lnkAddrs.forEach((lnkAddr, i) => {
-				if (typeof lnkAddr !== "undefined") {					
-					promises.push(reqPromise(parameterizeURL(lnkAddr))
+				if (typeof lnkAddr !== "undefined") {				
+					let validUrl = (urlRegex(lnkAddr,{}).length > 0) ? lnkAddr : url+lnkAddr					
+					promises.push(reqPromise(parameterizeURL(validUrl))
 						.then((lnkPage) => {
 							let textBody = lnkPage.text().trim();							
 							let {city, state } = getCityState(textBody);
-							result = {city,state,data:textBody};						
+							// result = {city,state,data:textBody};
+							result = {path:validUrl,city,state};
 							bags.push(result);							
 							return result;
 						})
@@ -124,6 +136,14 @@ function toStringAndFilterDups(arr) {
     return unique_array.toString();
 }
 
+function urlRegex(str,config) {
+	return regexParser(
+		str,
+		'(https?:\\/\\/(?:www\\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|www\\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|https?:\\/\\/(?:www\\.|(?!www))[a-zA-Z0-9]\\.[^\\s]{2,}|www\\.[a-zA-Z0-9]\\.[^\\s]{2,})',		
+		config
+	)
+}
+
 function stateRegex(str, config) {
 	return regexParser(
 		str,
@@ -141,14 +161,14 @@ function stateAbbrRegex(str,config) {
 function cityRegex(str,config) {
 	return regexParser(
 		str,
-		'\\b[a-zA-Z]+([ ][a-zA-Z]{0,3})+,[ ]+(?:Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New[ ]Hampshire|New[ ]Jersey|New[ ]Mexico|New[ ]York|North[ ]Carolina|North[ ]Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode[ ]Island|South[ ]Carolina|South[ ]Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West[ ]Virginia|Wisconsin|Wyoming)',
+		'\\b[a-zA-Z]+([ A-Za-z]){0,12},[ ]+(?:Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New[ ]Hampshire|New[ ]Jersey|New[ ]Mexico|New[ ]York|North[ ]Carolina|North[ ]Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode[ ]Island|South[ ]Carolina|South[ ]Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West[ ]Virginia|Wisconsin|Wyoming)',
 		config);
 }
 
 function cityAbbrRegex(str,config) {
 	return regexParser(
 		str,
-		'\\b[a-zA-Z]+(?:[\\s-][a-zA-Z]+)+,[ ]+([A-Z]{2})\\b',
+		'\\b[a-zA-Z]+([ A-Za-z]){0,12},[ ]+([A-Z]{2})\\b',
 		config);
 }
 
@@ -191,14 +211,49 @@ function regexParser(str, pattern, config) {
 
 // console.log(getCityState('Contact Us Founded in 1954 by Howard and Naomi Taylor, Douglass has been supplying high design, quality fabrics to the industry for over sixty years. Located in Egg Harbor City, New Jersey, decades of devotion to textile manufacturing have earned Douglass a reputation for discriminating style, quick delivery, and excellent customer service. Our extensive sales force, both domestically and abroad, ensure there is someone available to address your special fabric needs. Douglass provides contract seating fabrics, panel fabrics, faux vinyls / urethanes, and foam to a broad spectrum of markets including contract purchasers, interior designers, furniture manufacturers, architects, and specifiers along with federal and state governments. Please browse our website for additional information on our products, or to request memo samples. CONTACT US: Douglass Industries, Inc. 412 Boston Ave P.O. Box 701 Egg Harbor City, NJ  08215 Phone:  609-965-6030 E-Mail:  info@dougind.com Customer Service Phone:  800-950-3684 Fax:  609-965-7271 E-Mail: sales@dougind.com samples@dougind.com Monday – Friday 8:00am to 6pm E.S.T.'));
 
-// console.log(cityRegex('asdasd asdasd ags Egg Harbor City, Alabama'));
+// console.log(getCityState('asad Egg Harbor City, NJ'));
+// console.log(getCityState('Miami, FL'));
 
-scrape('endurance-crawl-bags','96,http://acecwatertown.org/');
-scrape('endurance-crawl-bags','97,https://www.danitadelimont.com/');
+// scrape('endurance-crawl-bags','96,http://acecwatertown.org/');
+// scrape('endurance-crawl-bags','97,https://www.danitadelimont.com/');
 // scrape('','98,http://dougind.com');
 
-// for (let i = 0; i <= 90; i++) {
-// 	processQueueMessage(
-// 		'https://sqs.us-west-2.amazonaws.com/088617881078/backlog_crawlBot',
-// 		'endurance-crawl-bags');
-// }
+// console.log(urlRegex('contact.php',{}));
+
+do {
+	for (let i = 0; i <= 10000; i++) {
+		processQueueMessage(
+			'https://sqs.us-west-2.amazonaws.com/088617881078/backlog_crawlBot',
+			'endurance-crawl-bags');
+	}	
+	sleep(5000);
+ } while (true);
+
+// var lineReader = require('readline').createInterface({
+// 	input: fs.createReadStream('/Users/jchaves/Downloads/urlListWithAdWords/Urls.txt')
+// });
+
+// let countLine = 0;
+
+
+// lineReader.on('line', function (line) {		
+
+// 	var params = {
+// 		DelaySeconds: 0,
+// 		MessageAttributes: {},
+// 		MessageBody: countLine + ','+ line,
+// 		QueueUrl: "https://sqs.us-west-2.amazonaws.com/088617881078/backlog_crawlBot"
+// 	   };
+
+// 	   if(countLine >= 1 && countLine<= 10000){
+// 		sqs.sendMessage(params, function(err, data) {
+// 			if (err) {
+// 			  console.log("Error", err);
+// 			} else {
+// 			  console.log("Success", data.MessageId);
+// 			}
+// 		  });
+// 		console.log('Line from file:', line);
+// 	   }	
+// 	countLine+=1;
+//   });
